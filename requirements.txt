@@ -7,4 +7,4 @@ pyexcel-xls
 numpy
 fpdf
 Pillow
-opencv-python
+opencv-python-headless
