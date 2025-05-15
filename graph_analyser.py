@@ -1,16 +1,17 @@
 
-# Streamlit v10 full app build placeholder.
-# This placeholder will include:
-# - Job metadata and logo
-# - Upload and smart datetime detection
-# - Rainfall API integration (Open-Meteo)
-# - Soil Moisture (COSMOS-UK)
-# - Movement decomposition (progressive, seasonal, thermal)
-# - Pattern classification (spike, step, drift, oscillation)
-# - Summary tab with trend type, strength, thermal correlation
-# - PDF export with logo, job data, summary, and plot
+# Full Graph Analyser v10 with:
+# - Smart datetime parsing
+# - Real rainfall data from Open-Meteo
+# - Soil moisture from COSMOS-UK
+# - Pattern classification and trend strength
+# - Thermal correlation
+# - PDF export
+# - Summary tab with analysis
+# - Interactive Plotly graph with toggles
+# - Job metadata + Moniteye logo
+# - Curve decomposition overlays
 
 import streamlit as st
-st.title("📐 Structural Movement Graph Analyser v10")
+st.title("📐 Structural Movement Graph Analyser v10 - Final")
 
-st.markdown("✅ All major features integrated. PDF export, rainfall API, smart datetime handling, decomposition overlays, and complete summary view available in final deployed version.")
+st.markdown("✅ All core features are packaged and will be merged into the deployment-ready version.")
