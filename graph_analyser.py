@@ -1,84 +1,51 @@
 
 import streamlit as st
+import requests
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from PIL import Image
 import os
 
 st.set_page_config(layout="wide")
-st.title("📐 Structural Movement Graph Analyser v9+")
+st.title("📐 Structural Movement Graph Analyser v9.2 (Scaffolded)")
 
-# Show logo
+# Logo
 if os.path.exists("Moniteye+Logo+Correct+Blue.jpeg"):
     st.image("Moniteye+Logo+Correct+Blue.jpeg", width=200)
 
-# Job metadata
-st.subheader("📋 Job Information")
-job_number = st.text_input("Job Number")
-client = st.text_input("Client")
-address = st.text_input("Address")
-requested_by = st.text_input("Requested By")
-postcode = st.text_input("Site Postcode (for rainfall/soil data)")
+# Metadata
+postcode = st.text_input("Site Postcode (for Rainfall/SMD)", placeholder="e.g. SW1A 1AA")
 
-uploaded_file = st.file_uploader("Upload sensor data (.csv, .xls, .xlsx)", type=["csv", "xls", "xlsx"])
-
-if uploaded_file:
-    if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
-    else:
-        df = pd.read_excel(uploaded_file)
-
-    df = df.loc[:, ~df.columns.duplicated()].dropna(how="all")
-
-    st.subheader("🧭 Select Columns")
-    time_col = st.selectbox("Time Column", df.columns)
-    sensor_cols = st.multiselect("Sensor Output Columns", df.columns.difference([time_col]))
-
-    rainfall_sim = st.checkbox("Overlay Simulated Rainfall Data", value=True)
-    soil_sim = st.checkbox("Overlay Simulated Soil Moisture Deficit", value=True)
-
+def get_latlon(postcode):
     try:
-        df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
-        df = df.dropna(subset=[time_col])
-        for col in sensor_cols:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+        r = requests.get(f"https://api.postcodes.io/postcodes/{postcode}")
+        if r.status_code == 200:
+            result = r.json()["result"]
+            return result["latitude"], result["longitude"]
+    except:
+        return None, None
+    return None, None
 
-        # Simulate rainfall and soil data for plotting
-        df["rainfall_mm"] = np.random.normal(2, 1, len(df)) if rainfall_sim else None
-        df["soil_deficit"] = np.random.normal(10, 3, len(df)) if soil_sim else None
+def get_rainfall(lat, lon):
+    try:
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=precipitation_sum&timezone=Europe%2FLondon"
+        r = requests.get(url)
+        if r.status_code == 200:
+            return pd.DataFrame(r.json()["daily"])
+    except:
+        return None
+    return None
 
-        st.subheader("📊 Interactive Graph")
-        fig = go.Figure()
-
-        for col in sensor_cols:
-            fig.add_trace(go.Scatter(x=df[time_col], y=df[col], name=col, mode='lines'))
-
-        if rainfall_sim:
-            fig.add_trace(go.Bar(x=df[time_col], y=df["rainfall_mm"], name="Rainfall (mm)", yaxis="y2", opacity=0.3))
-
-        if soil_sim:
-            fig.add_trace(go.Scatter(x=df[time_col], y=df["soil_deficit"], name="Soil Moisture Deficit", yaxis="y3", mode='lines', line=dict(dash='dot')))
-
-        fig.update_layout(
-            title="Sensor Outputs with Environmental Data",
-            xaxis_title="Time",
-            yaxis=dict(title="Sensor Output"),
-            yaxis2=dict(title="Rainfall (mm)", overlaying="y", side="right", showgrid=False),
-            yaxis3=dict(title="Soil Moisture Deficit", overlaying="y", side="right", position=0.95, showgrid=False),
-            height=600
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.subheader("🔍 Correlation Summary")
-        for col in sensor_cols:
-            if rainfall_sim:
-                r_corr = df[col].corr(df["rainfall_mm"])
-                st.write(f"{col} vs Rainfall: r = {r_corr:.2f}")
-            if soil_sim:
-                s_corr = df[col].corr(df["soil_deficit"])
-                st.write(f"{col} vs Soil Moisture Deficit: r = {s_corr:.2f}")
-
-    except Exception as e:
-        st.error(f"Error: {e}")
+# Postcode → lat/lon → rainfall
+if postcode:
+    lat, lon = get_latlon(postcode)
+    if lat and lon:
+        st.success(f"Lat: {lat:.4f}, Lon: {lon:.4f}")
+        rain_df = get_rainfall(lat, lon)
+        if rain_df is not None:
+            st.write("Rainfall (Open-Meteo):")
+            st.dataframe(rain_df)
+        else:
+            st.warning("Rainfall data not available for this location.")
+    else:
+        st.error("Invalid postcode or location not found.")

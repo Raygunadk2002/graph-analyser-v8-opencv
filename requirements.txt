@@ -9,3 +9,4 @@ numpy
 fpdf
 Pillow
 opencv-python-headless
+requests
