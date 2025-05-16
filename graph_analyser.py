@@ -56,8 +56,9 @@ def analyze_trend(series):
     if len(series.dropna()) < 5:
         return "none", "insufficient data"
     slope = pd.Series(series).dropna().reset_index(drop=True)
-    slope_val = pd.Series(np.polyfit(range(len(slope)), slope, 1)[0])
-    return "progressive", classify_strength(slope_val[0] / slope.std())
+   slope_val = np.polyfit(range(len(slope)), slope, 1)[0]
+return "progressive", classify_strength(slope_val / slope.std())
+
 
 if uploaded_file:
     if uploaded_file.name.endswith(".csv"):
