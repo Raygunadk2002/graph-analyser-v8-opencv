@@ -1,12 +1,4 @@
 streamlit
 pandas
-matplotlib
 plotly
 openpyxl
-pyexcel
-pyexcel-xls
-numpy
-fpdf
-Pillow
-opencv-python-headless
-requests
