@@ -5,15 +5,15 @@ import plotly.graph_objects as go
 import requests
 from fpdf import FPDF
 import os
+import numpy as np
 
 st.set_page_config(layout="wide")
-st.title("📐 Graph Analyser v10 — Verified FULL")
+st.title("📐 Graph Analyser v10 — Fixed Trend Analysis")
 
 if os.path.exists("Moniteye+Logo+Correct+Blue.jpeg"):
     st.image("Moniteye+Logo+Correct+Blue.jpeg", width=200)
 
-# Sidebar
-st.sidebar.header("📋 Job Info")
+st.sidebar.subheader("📋 Job Info")
 job_number = st.sidebar.text_input("Job Number")
 client = st.sidebar.text_input("Client")
 address = st.sidebar.text_input("Address")
@@ -53,12 +53,11 @@ def classify_strength(value):
         return "strong"
 
 def analyze_trend(series):
-    if len(series.dropna()) < 5:
+    series = pd.Series(series).dropna().reset_index(drop=True)
+    if len(series) < 5:
         return "none", "insufficient data"
-    slope = pd.Series(series).dropna().reset_index(drop=True)
-   slope_val = np.polyfit(range(len(slope)), slope, 1)[0]
-return "progressive", classify_strength(slope_val / slope.std())
-
+    slope_val = np.polyfit(range(len(series)), series, 1)[0]
+    return "progressive", classify_strength(slope_val / series.std())
 
 if uploaded_file:
     if uploaded_file.name.endswith(".csv"):
@@ -137,7 +136,7 @@ if uploaded_file:
                 if "Rainfall Corr" in row:
                     line += f" | Rainfall Corr: {row['Rainfall Corr']}"
                 pdf.cell(200, 10, txt=line, ln=True)
-            path = "/tmp/moniteye_verified_v10.pdf"
+            path = "/tmp/report_v10_fixed.pdf"
             pdf.output(path)
             with open(path, "rb") as f:
-                st.download_button("Download PDF", f, file_name="moniteye_report_v10.pdf")
+                st.download_button("Download PDF", f, file_name="moniteye_report_v10_fixed.pdf")
