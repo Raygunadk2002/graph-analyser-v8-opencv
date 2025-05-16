@@ -10,7 +10,7 @@ import pyexcel
 from PIL import Image
 
 st.set_page_config(layout="wide")
-st.title("📐 Structural Movement Graph Analyser v12 — Cumulative Rain Summaries")
+st.title("📐 Structural Movement Graph Analyser v13")
 
 # Display logo
 logo_path = "Moniteye+Logo+Correct+Blue.jpeg"
@@ -25,7 +25,7 @@ address = st.sidebar.text_input("Address")
 requested_by = st.sidebar.text_input("Requested By")
 postcode = st.sidebar.text_input("Site Postcode", placeholder="SW1A 1AA")
 
-uploaded = st.sidebar.file_uploader("Upload CSV/XLS/XLSX", type=["csv","xls","xlsx"])
+uploaded = st.sidebar.file_uploader("Upload CSV / XLS / XLSX", type=["csv","xls","xlsx"])
 include_rain = st.sidebar.checkbox("Include Rainfall", value=True)
 components = st.sidebar.multiselect("Show Components", ["Original","Seasonal","Progressive"], default=["Original","Seasonal","Progressive"])
 
@@ -41,12 +41,7 @@ def safe_read_table(uploaded_file):
         return pd.read_excel(uploaded_file, engine='openpyxl')
     elif name.endswith('.xls'):
         uploaded_file.seek(0)
-        content = uploaded_file.read()
-        tmp = "/tmp/temp.xls"
-        with open(tmp, "wb") as f:
-            f.write(content)
-        sheet = pyexcel.get_sheet(file_name=tmp)
-        return pd.DataFrame(sheet.to_array()[1:], columns=sheet.row[0])
+        return pd.read_excel(uploaded_file, engine='xlrd')
     else:
         st.error("Unsupported file type.")
         return None
@@ -55,16 +50,16 @@ def get_latlon(postcode):
     try:
         r = requests.get(f"https://api.postcodes.io/postcodes/{postcode}")
         r.raise_for_status()
-        res = r.json().get('result', {})
-        return res.get('latitude'), res.get('longitude')
+        loc = r.json().get('result', {})
+        return loc.get('latitude'), loc.get('longitude')
     except:
         return None, None
 
-def get_historical_rainfall(lat, lon, start_date, end_date):
+def get_historical_rainfall(lat, lon, start, end):
     url = (
         "https://archive-api.open-meteo.com/v1/era5?"
         f"latitude={lat}&longitude={lon}"
-        f"&start_date={start_date}&end_date={end_date}"
+        f"&start_date={start}&end_date={end}"
         "&daily=precipitation_sum"
         "&timezone=Europe%2FLondon"
     )
@@ -79,20 +74,19 @@ if uploaded:
     df = safe_read_table(uploaded)
     if df is None or df.empty:
         st.stop()
-
+    # Parse datetime
     time_col = st.sidebar.selectbox("Time Column", df.columns)
     df['__time__'] = pd.to_datetime(df[time_col], errors='coerce')
     df = df.dropna(subset=['__time__']).sort_values('__time__')
-
-    sensor_cols = st.sidebar.multiselect("Sensor Columns", [c for c in df.columns if c!=time_col])
+    sensor_cols = st.sidebar.multiselect("Sensor Columns", [c for c in df.columns if c != time_col])
     for c in sensor_cols:
         df[c] = pd.to_numeric(df[c], errors='coerce')
-
+    # Rainfall
     rain_series = None
     cum_rain = None
     if include_rain and postcode:
         lat, lon = get_latlon(postcode)
-        if lat is not None:
+        if lat and lon:
             start = df['__time__'].dt.date.min().isoformat()
             end = df['__time__'].dt.date.max().isoformat()
             rain_series = get_historical_rainfall(lat, lon, start, end)
@@ -100,65 +94,75 @@ if uploaded:
                 rain_series = rain_series.reindex(df['__time__'], method='nearest').fillna(0)
                 cum_rain = rain_series.cumsum()
             else:
-                st.warning("Historical rainfall data unavailable.")
-
+                st.warning("Rainfall data unavailable")
     # Graph View
     with tabs[0]:
-        st.subheader("Sensor Data with Seasonal/Progressive")
+        st.subheader("Sensor Data Decomposition")
         fig = go.Figure()
         for c in sensor_cols:
             s = df[c].dropna()
             seasonal = s.rolling(window=30, min_periods=1, center=True).mean()
             progressive = s - seasonal
-            fig.add_trace(go.Scatter(x=df['__time__'], y=s, name=f"{c} original"))
+            if "Original" in components:
+                fig.add_trace(go.Scatter(x=df['__time__'], y=s, name=f"{c} original"))
             if "Seasonal" in components:
                 fig.add_trace(go.Scatter(x=df['__time__'], y=seasonal, name=f"{c} seasonal"))
             if "Progressive" in components:
                 fig.add_trace(go.Scatter(x=df['__time__'], y=progressive, name=f"{c} progressive"))
         if rain_series is not None:
             fig.add_trace(go.Bar(x=df['__time__'], y=rain_series, name='Rainfall', yaxis='y2', opacity=0.3))
-        fig.update_layout(
-            xaxis_title="Time", yaxis_title="Movement",
-            yaxis2=dict(overlaying='y', side='right', title='Rainfall'),
-            height=600
-        )
+        fig.update_layout(xaxis_title="Time", yaxis_title="Movement",
+                          yaxis2=dict(overlaying='y', side='right', title='Rainfall'),
+                          height=600)
         st.plotly_chart(fig, use_container_width=True)
-
     # Summary
     with tabs[1]:
         st.subheader("Summary Analysis")
-        cols = st.columns(len(sensor_cols) or 1)
         summary = []
-        for i, c in enumerate(sensor_cols):
-            s = df[c]
-            # compute cumulative rain correlation
-            corr_cum = s.corr(cum_rain) if cum_rain is not None else None
-
-            # display metric card for cumulative rain corr
-            with cols[i]:
-                if corr_cum is not None:
-                    st.metric(label=f"{c} Cum Rain Corr", value=f"{corr_cum:.2f}")
-                else:
-                    st.write(f"{c}: No rain data")
-
-            # determine movement type
-            df['month'] = df['__time__'].dt.month
-            summer = s[df['month'].isin([6,7,8])].mean()
-            winter = s[df['month'].isin([12,1,2])].mean()
-            if corr_cum is not None and corr_cum < -0.3:
-                movement_type = "seasonal"
-                strength = "strong"
-                note = "Clay shrink/swell"
-            elif s.iloc[-1] - s.iloc[0] > s.std():
-                movement_type = "progressive"
-                strength = "strong"
-                note = "Consistent drift"
+        for c in sensor_cols:
+            s = df[c].dropna()
+            # seasonal & progressive metrics
+            months = df['__time__'].dt.month
+            summer = s[months.isin([5,6,7,8,9])].mean()
+            winter = s[months.isin([10,11,12,1,2,3,4])].mean()
+            net_change = s.iloc[-1] - s.iloc[0]
+            std = s.std()
+            rain_corr = cum_rain.corr(s) if cum_rain is not None else None
+            # classification
+            if rain_corr is not None and (summer - winter) > std and rain_corr < -0.3:
+                mtype, strength, note = "seasonal", "strong", "Clay shrink/swell"
+            elif abs(net_change) > std:
+                mtype, strength, note = "progressive", "strong", f"Drift {net_change:.2f}"
             else:
-                movement_type = "none"
-                strength = "weak"
-                note = ""
-            summary.append({"Sensor":c, "Type":movement_type, "Strength":strength, "Note":note, "Cum Rain Corr":f"{corr_cum:.2f}" if corr_cum is not None else ""})
-
-        st.table(pd.DataFrame(summary))
-
-    # PDF Report omitted...
+                mtype, strength, note = "none", "weak", ""
+            summary.append({
+                "Sensor": c,
+                "Type": mtype,
+                "Strength": strength,
+                "Note": note,
+                "Cum Rain Corr": f"{rain_corr:.2f}" if rain_corr is not None else ""
+            })
+        st.dataframe(pd.DataFrame(summary))
+    # PDF Report
+    with tabs[2]:
+        if st.button("Export PDF"):
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            if os.path.exists(logo_src):
+                pdf.image(logo_src, x=10, y=8, w=50)
+                pdf.ln(30)
+            pdf.cell(200,10,txt="Structural Movement Report",ln=1)
+            for row in summary:
+                line = f"{row['Sensor']}: {row['Type']} ({row['Strength']})"
+                if row['Note']:
+                    line += f" - {row['Note']}"
+                if row['Cum Rain Corr']:
+                    line += f" | Rain Corr: {row['Cum Rain Corr']}"
+                pdf.cell(200,10,txt=line,ln=1)
+            fig.write_image("/tmp/plot.png")
+            pdf.image("/tmp/plot.png", x=10, y=pdf.get_y()+5, w=180)
+            out = "/tmp/report_v13.pdf"
+            pdf.output(out)
+            with open(out,"rb") as f:
+                st.download_button("Download PDF", f, file_name="report_v13.pdf")
