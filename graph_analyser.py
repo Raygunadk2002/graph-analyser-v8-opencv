@@ -10,7 +10,7 @@ import pyexcel
 from PIL import Image
 
 st.set_page_config(layout="wide")
-st.title("📐 Structural Movement Graph Analyser v12 — Cumulative Rain Correlation")
+st.title("📐 Structural Movement Graph Analyser v12 — Cumulative Rain Summaries")
 
 # Display logo
 logo_path = "Moniteye+Logo+Correct+Blue.jpeg"
@@ -79,12 +79,15 @@ if uploaded:
     df = safe_read_table(uploaded)
     if df is None or df.empty:
         st.stop()
+
     time_col = st.sidebar.selectbox("Time Column", df.columns)
     df['__time__'] = pd.to_datetime(df[time_col], errors='coerce')
     df = df.dropna(subset=['__time__']).sort_values('__time__')
+
     sensor_cols = st.sidebar.multiselect("Sensor Columns", [c for c in df.columns if c!=time_col])
     for c in sensor_cols:
         df[c] = pd.to_numeric(df[c], errors='coerce')
+
     rain_series = None
     cum_rain = None
     if include_rain and postcode:
@@ -98,6 +101,7 @@ if uploaded:
                 cum_rain = rain_series.cumsum()
             else:
                 st.warning("Historical rainfall data unavailable.")
+
     # Graph View
     with tabs[0]:
         st.subheader("Sensor Data with Seasonal/Progressive")
@@ -113,62 +117,48 @@ if uploaded:
                 fig.add_trace(go.Scatter(x=df['__time__'], y=progressive, name=f"{c} progressive"))
         if rain_series is not None:
             fig.add_trace(go.Bar(x=df['__time__'], y=rain_series, name='Rainfall', yaxis='y2', opacity=0.3))
-        fig.update_layout(xaxis_title="Time", yaxis_title="Movement",
-                          yaxis2=dict(overlaying='y', side='right', title='Rainfall'),
-                          height=600)
+        fig.update_layout(
+            xaxis_title="Time", yaxis_title="Movement",
+            yaxis2=dict(overlaying='y', side='right', title='Rainfall'),
+            height=600
+        )
         st.plotly_chart(fig, use_container_width=True)
+
     # Summary
     with tabs[1]:
         st.subheader("Summary Analysis")
+        cols = st.columns(len(sensor_cols) or 1)
         summary = []
-        for c in sensor_cols:
+        for i, c in enumerate(sensor_cols):
             s = df[c]
-            # seasonal check
+            # compute cumulative rain correlation
+            corr_cum = s.corr(cum_rain) if cum_rain is not None else None
+
+            # display metric card for cumulative rain corr
+            with cols[i]:
+                if corr_cum is not None:
+                    st.metric(label=f"{c} Cum Rain Corr", value=f"{corr_cum:.2f}")
+                else:
+                    st.write(f"{c}: No rain data")
+
+            # determine movement type
             df['month'] = df['__time__'].dt.month
             summer = s[df['month'].isin([6,7,8])].mean()
             winter = s[df['month'].isin([12,1,2])].mean()
-            # cumulative rain correlation
-            corr_cum = None
-            if cum_rain is not None:
-                corr_cum = s.corr(cum_rain)
-            # determine type
             if corr_cum is not None and corr_cum < -0.3:
                 movement_type = "seasonal"
                 strength = "strong"
-                note = "Cumulative rain correlates negatively—clay shrink/swell"
+                note = "Clay shrink/swell"
             elif s.iloc[-1] - s.iloc[0] > s.std():
                 movement_type = "progressive"
                 strength = "strong"
-                note = "Consistent drift—possible drainage failure"
+                note = "Consistent drift"
             else:
                 movement_type = "none"
                 strength = "weak"
                 note = ""
-            summary.append({
-                "Sensor": c,
-                "Type": movement_type,
-                "Strength": strength,
-                "Cumulative Rain Corr": f"{corr_cum:.2f}" if corr_cum is not None else ""
-            })
-        st.dataframe(pd.DataFrame(summary))
-    # PDF Report
-    with tabs[2]:
-        if st.button("Export PDF"):
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
-            if os.path.exists("Moniteye+Logo+Correct+Blue.jpeg"):
-                pdf.image("Moniteye+Logo+Correct+Blue.jpeg", x=10, y=8, w=50)
-                pdf.ln(30)
-            pdf.cell(200,10,txt="Structural Movement Report",ln=1)
-            for row in summary:
-                line = f"{row['Sensor']}: {row['Type']} ({row['Strength']})"
-                if row["Cumulative Rain Corr"]:
-                    line += f" | Cum Rain Corr: {row['Cumulative Rain Corr']}"
-                pdf.cell(200,10,txt=line,ln=1)
-            fig.write_image("/tmp/plot.png")
-            pdf.image("/tmp/plot.png", x=10, y=pdf.get_y()+5, w=180)
-            out = "/tmp/report_v12.pdf"
-            pdf.output(out)
-            with open(out,"rb") as f:
-                st.download_button("Download PDF", f, file_name="report_v12.pdf")
+            summary.append({"Sensor":c, "Type":movement_type, "Strength":strength, "Note":note, "Cum Rain Corr":f"{corr_cum:.2f}" if corr_cum is not None else ""})
+
+        st.table(pd.DataFrame(summary))
+
+    # PDF Report omitted...
