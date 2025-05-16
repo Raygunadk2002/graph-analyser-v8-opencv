@@ -1,6 +1,11 @@
 streamlit
 pandas
+numpy
 plotly
 requests
 fpdf
 openpyxl
+pyexcel
+pyexcel-xls
+Pillow
+opencv-python-headless
